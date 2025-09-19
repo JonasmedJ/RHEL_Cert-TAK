@@ -1,0 +1,96 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'tak.server.plugins.rhelidmcert'
+version = '1.0.0'
+description = 'RHEL IDM Certificate Plugin for TAK Server'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Framework dependencies
+    implementation 'org.springframework:spring-context:5.3.21'
+    implementation 'org.springframework:spring-web:5.3.21'
+    
+    // LDAP dependencies for RHEL IDM integration
+    implementation 'com.unboundid:unboundid-ldapsdk:6.0.5'
+    
+    // BouncyCastle (for certificate operations)
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.77'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.77'
+
+    // JSON processing
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.3'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.13.3'
+    
+    // YAML processing (SnakeYAML)
+    implementation 'org.yaml:snakeyaml:2.2'
+
+    // Logging (SLF4J + Logback)
+    implementation "org.slf4j:slf4j-api:2.0.12"
+    implementation "org.slf4j:slf4j-simple:2.0.12"
+    implementation 'ch.qos.logback:logback-classic:1.2.11'
+    
+    // Utilities
+    implementation 'org.apache.commons:commons-lang3:3.12.0'
+    implementation 'commons-io:commons-io:2.11.0'
+    
+    // Testing
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:4.6.1'
+}
+
+// Application main class (for testing)
+application {
+    mainClass = 'tak.server.plugins.rhelidmcert.RhelIdmCertificatePlugin'
+}
+
+compileJava {
+    options.compilerArgs += ['-parameters']
+    options.encoding = 'UTF-8'
+}
+
+jar {
+    archiveBaseName = 'rhel-idm-certificate-plugin'
+    archiveVersion = version
+    
+    manifest {
+        attributes(
+            'Implementation-Title': 'RHEL IDM Certificate Plugin',
+            'Implementation-Version': version,
+            'Plugin-Class': 'tak.server.plugins.rhelidmcert.RhelIdmCertificatePlugin'
+        )
+    }
+    
+    // Include all dependencies
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// Task for easy deployment
+task deployPlugin(type: Copy) {
+    dependsOn jar
+    from jar.archiveFile
+    into '/opt/tak/plugins'
+    
+    doLast {
+        println "Plugin JAR created: ${jar.archiveFile.get()}"
+        println "Copy to TAK Server: sudo cp ${jar.archiveFile.get()} /opt/tak/plugins/"
+    }
+}
+
+test {
+    useJUnit()
+}
