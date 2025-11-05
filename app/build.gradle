@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id 'application'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 group = 'tak.server.plugins.rhelidmcert'
@@ -15,6 +16,32 @@ java {
 repositories {
     mavenCentral()
 }
+
+// Configure shadow JAR to create fat JAR with all dependencies
+shadowJar {
+    archiveBaseName = 'rhel-idm-certificate-plugin'
+    archiveClassifier = ''
+    archiveVersion = version
+
+    // Merge service files (important for Spring and other frameworks)
+    mergeServiceFiles()
+
+    // Relocate conflicting dependencies to avoid conflicts with TAK Server
+    relocate 'org.springframework', 'shadow.org.springframework'
+    relocate 'com.fasterxml.jackson', 'shadow.com.fasterxml.jackson'
+
+    manifest {
+        attributes(
+            'Implementation-Title': 'RHEL IDM Certificate Plugin',
+            'Implementation-Version': version,
+            'Plugin-Class': 'tak.server.plugins.rhelidmcert.RhelIdmCertificatePlugin',
+            'Multi-Release': 'true'
+        )
+    }
+}
+
+// Make shadowJar the default build artifact
+build.dependsOn shadowJar
 
 dependencies {
     // Spring Framework dependencies
@@ -59,35 +86,16 @@ compileJava {
     options.encoding = 'UTF-8'
 }
 
-jar {
-    archiveBaseName = 'rhel-idm-certificate-plugin'
-    archiveVersion = version
-    
-    manifest {
-        attributes(
-            'Implementation-Title': 'RHEL IDM Certificate Plugin',
-            'Implementation-Version': version,
-            'Plugin-Class': 'tak.server.plugins.rhelidmcert.RhelIdmCertificatePlugin'
-        )
-    }
-    
-    // Include all dependencies
-    from {
-        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
-    }
-    
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
 // Task for easy deployment
 task deployPlugin(type: Copy) {
-    dependsOn jar
-    from jar.archiveFile
+    dependsOn shadowJar
+    from shadowJar.archiveFile
     into '/opt/tak/plugins'
-    
+
     doLast {
-        println "Plugin JAR created: ${jar.archiveFile.get()}"
-        println "Copy to TAK Server: sudo cp ${jar.archiveFile.get()} /opt/tak/plugins/"
+        println "Plugin JAR created: ${shadowJar.archiveFile.get()}"
+        println "Copy to TAK Server: sudo cp ${shadowJar.archiveFile.get()} /opt/tak/plugins/"
+        println "Then restart: sudo systemctl restart takserver"
     }
 }
 
