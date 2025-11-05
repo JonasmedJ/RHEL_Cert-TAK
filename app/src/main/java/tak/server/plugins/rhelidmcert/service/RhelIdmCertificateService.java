@@ -3,18 +3,31 @@ package tak.server.plugins.rhelidmcert.service;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.StringWriter;
+import java.io.IOException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
+import java.security.Security;
 import java.util.Hashtable;
-
 
 import javax.naming.Context;
 import javax.naming.directory.DirContext;
 import javax.naming.directory.InitialDirContext;
 import javax.security.auth.x500.X500Principal;
 
-
+import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.x509.AccessDescription;
+import org.bouncycastle.asn1.x509.AuthorityInformationAccess;
+import org.bouncycastle.asn1.x509.CRLDistPoint;
+import org.bouncycastle.asn1.x509.DistributionPoint;
+import org.bouncycastle.asn1.x509.DistributionPointName;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.ExtensionsGenerator;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder;
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder;
@@ -47,6 +60,13 @@ public class RhelIdmCertificateService {
     
     public RhelIdmCertificateService(PluginConfiguration config) {
         this.config = config;
+
+        // Register BouncyCastle provider for cryptographic operations
+        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+            Security.addProvider(new BouncyCastleProvider());
+            logger.debug("Registered BouncyCastle security provider");
+        }
+
         initializeServiceConnection();
     }
     
@@ -245,33 +265,95 @@ public class RhelIdmCertificateService {
     }
     
     /**
-     * Generate Certificate Signing Request (CSR)
+     * Generate Certificate Signing Request (CSR) with CRL and OCSP extensions
      */
     private String generateCSR(CertificateRequestInfo requestInfo, KeyPair keyPair) throws Exception {
-        
+
         // Create subject DN
-        String subjectDn = String.format("CN=%s,O=%s", 
-            requestInfo.getCommonName(), 
+        String subjectDn = String.format("CN=%s,O=%s",
+            requestInfo.getCommonName(),
             requestInfo.getOrganization() != null ? requestInfo.getOrganization() : config.getDefaultOrganization());
-        
+
         X500Principal subject = new X500Principal(subjectDn);
-        
+
         // Build CSR
         PKCS10CertificationRequestBuilder csrBuilder = new JcaPKCS10CertificationRequestBuilder(
             subject, keyPair.getPublic());
-        
+
+        // Add certificate revocation extensions
+        ExtensionsGenerator extensionsGenerator = new ExtensionsGenerator();
+
+        // Add CRL Distribution Point extension if enabled
+        if (config.isCrlEnabled() && config.getCrlDistributionPoint() != null) {
+            try {
+                GeneralName crlGeneralName = new GeneralName(
+                    GeneralName.uniformResourceIdentifier,
+                    config.getCrlDistributionPoint()
+                );
+
+                GeneralNames crlGeneralNames = new GeneralNames(crlGeneralName);
+                DistributionPointName crlDistPointName = new DistributionPointName(crlGeneralNames);
+                DistributionPoint[] crlDistPoints = new DistributionPoint[]{
+                    new DistributionPoint(crlDistPointName, null, null)
+                };
+
+                CRLDistPoint crlDistPoint = new CRLDistPoint(crlDistPoints);
+                extensionsGenerator.addExtension(Extension.cRLDistributionPoints, false, crlDistPoint);
+
+                logger.debug("Added CRL Distribution Point: {}", config.getCrlDistributionPoint());
+            } catch (Exception e) {
+                logger.warn("Failed to add CRL Distribution Point extension: {}", e.getMessage());
+            }
+        }
+
+        // Add Authority Information Access (OCSP) extension if enabled
+        if (config.isOcspEnabled() && config.getOcspResponderUrl() != null) {
+            try {
+                GeneralName ocspGeneralName = new GeneralName(
+                    GeneralName.uniformResourceIdentifier,
+                    config.getOcspResponderUrl()
+                );
+
+                AccessDescription ocspAccessDescription = new AccessDescription(
+                    AccessDescription.id_ad_ocsp,
+                    ocspGeneralName
+                );
+
+                AuthorityInformationAccess authorityInfoAccess = new AuthorityInformationAccess(
+                    ocspAccessDescription
+                );
+
+                extensionsGenerator.addExtension(Extension.authorityInfoAccess, false, authorityInfoAccess);
+
+                logger.debug("Added OCSP Responder: {}", config.getOcspResponderUrl());
+            } catch (Exception e) {
+                logger.warn("Failed to add OCSP extension: {}", e.getMessage());
+            }
+        }
+
+        // Add extensions to CSR if any were added
+        if (config.isCrlEnabled() || config.isOcspEnabled()) {
+            csrBuilder.addAttribute(
+                new ASN1ObjectIdentifier("1.2.840.113549.1.9.14"), // pkcs-9-at-extensionRequest
+                extensionsGenerator.generate()
+            );
+            logger.info("Certificate revocation extensions added to CSR (CRL: {}, OCSP: {})",
+                config.isCrlEnabled(), config.isOcspEnabled());
+        }
+
+        // Sign the CSR
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
             .setProvider("BC")
             .build(keyPair.getPrivate());
-        
+
         org.bouncycastle.pkcs.PKCS10CertificationRequest csr = csrBuilder.build(signer);
-        
+
         // Convert to PEM format
         StringWriter sw = new StringWriter();
         try (JcaPEMWriter pemWriter = new JcaPEMWriter(sw)) {
             pemWriter.writeObject(csr);
         }
-        
+
         return sw.toString();
     }
     

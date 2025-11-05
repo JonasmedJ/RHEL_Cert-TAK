@@ -46,15 +46,19 @@ public class PluginConfiguration {
         "use_ssl", true
     );
     
-    private static final Map<String, Object> DEFAULT_CERTIFICATE_CONFIG = Map.of(
-        "ca_cert_path", "/opt/tak/certs/ca.pem",
-        "ca_key_path", "/opt/tak/certs/ca-key.pem",
-        "ca_key_password", "",
-        "validity_days", 365,
-        "key_size", 2048,
-        "signature_algorithm", "SHA256withRSA",
-        "default_organization", "TAK Organization"
-    );
+    private static final Map<String, Object> DEFAULT_CERTIFICATE_CONFIG = new HashMap<String, Object>() {{
+        put("ca_cert_path", "/opt/tak/certs/ca.pem");
+        put("ca_key_path", "/opt/tak/certs/ca-key.pem");
+        put("ca_key_password", "");
+        put("validity_days", 365);
+        put("key_size", 2048);
+        put("signature_algorithm", "SHA256withRSA");
+        put("default_organization", "TAK Organization");
+        put("crl_distribution_point", "http://idm.example.com/ipa/crl/MasterCRL.bin");
+        put("ocsp_responder_url", "http://idm.example.com/ca/ocsp");
+        put("enable_crl", true);
+        put("enable_ocsp", true);
+    }};
     
     private static final Map<String, Object> DEFAULT_PLUGIN_CONFIG = Map.of(
         "log_level", "INFO",
@@ -253,7 +257,25 @@ public class PluginConfiguration {
     public String getDefaultOrganization() {
         return (String) certificateConfig.get("default_organization");
     }
-    
+
+    public String getCrlDistributionPoint() {
+        return (String) certificateConfig.get("crl_distribution_point");
+    }
+
+    public String getOcspResponderUrl() {
+        return (String) certificateConfig.get("ocsp_responder_url");
+    }
+
+    public boolean isCrlEnabled() {
+        Object enabled = certificateConfig.get("enable_crl");
+        return enabled != null ? (Boolean) enabled : false;
+    }
+
+    public boolean isOcspEnabled() {
+        Object enabled = certificateConfig.get("enable_ocsp");
+        return enabled != null ? (Boolean) enabled : false;
+    }
+
     // Plugin Configuration Getters
     public String getLogLevel() {
         return (String) pluginConfig.get("log_level");
