@@ -275,8 +275,8 @@ public class RhelIdmCertificatePlugin extends MessageInterceptorBase implements 
      */
     private Object getPluginStatus() {
         return Map.of(
-            "plugin", PLUGIN_NAME,
-            "version", PLUGIN_VERSION,
+            "plugin", "RHEL IDM Certificate Plugin",
+            "version", "1.0.0",
             "status", "running",
             "rhelidmConnected", rhelidmService != null && rhelidmService.testConnection(),
             "rhelidmServer", config.getLdapServerUrl()
